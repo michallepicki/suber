@@ -1,0 +1,7 @@
+let is_cool_language = fun language ->
+  match language with
+    | `Erlang l -> l.is_cool
+    | `Mynewlanguage l -> l.is_cool;
+let program =
+  let language = `Mynewlanguage {is_cool=true} in
+  is_cool_language language;
