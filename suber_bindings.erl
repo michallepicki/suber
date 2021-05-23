@@ -3,8 +3,8 @@
 
 new() ->
   Table = ets:new(suber_bindings, [set, private]),
-  Changes = [],
-  Length = 0,
+  Changes = ets:new(suber_bindings, [set, private]),
+  Length = counters:new(1, []),
   {Table, Changes, Length}.
 
 get(Bindings, Key) ->
@@ -18,24 +18,29 @@ insert(Bindings, Key, Value) ->
   OldValue = get(Bindings, Key),
   {Table, Changes, Length} = Bindings,
   ets:insert(Table, {Key, Value}),
-  NewChanges = [{Key, OldValue} | Changes],
-  {Table, NewChanges, Length + 1}.
+  ets:insert(Changes, {counters:get(Length, 1), {Key, OldValue}}),
+  counters:add(Length, 1, 1),
+  ok.
 
 unwind(Bindings, ToLength) ->
   {Table, Changes, Length} = Bindings,
-  case Length of
-    ToLength -> Bindings;
+  case counters:get(Length, 1) of
+    ToLength -> ok;
     _ ->
-      [{Key, OldValue} | NewChanges] = Changes,
+      counters:sub(Length, 1, 1),
+      NewLength = counters:get(Length, 1),
+      {Key, OldValue} = ets:lookup_element(Changes, NewLength, 2),
+      ets:delete(Changes, NewLength),
       case OldValue of
         nil -> ets:delete(Table, Key);
         _ -> ets:insert(Table, {Key, OldValue})
       end,
-      unwind({Table, NewChanges, Length - 1}, ToLength)
+      unwind({Table, Changes, Length}, ToLength)
   end.
 
 in_child_scope(Bindings, CallbackFun) ->
   {_, _, Length} = Bindings,
-  {ChangedBindings, CallbackResult} = CallbackFun(Bindings),
-  RestoredBindings = unwind(ChangedBindings, Length),
-  {RestoredBindings, CallbackResult}.
+  BeforeLength = counters:get(Length, 1),
+  CallbackResult = CallbackFun(),
+  ok = unwind(Bindings, BeforeLength),
+  CallbackResult.
