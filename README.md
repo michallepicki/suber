@@ -7,4 +7,6 @@ To compile and run the type checker on an example `test_file.suber`, run
 escript -c suber.erl
 ```
 
+Modify the `test_file.suber` to make a typo in a record field name, or case tag, re-run and you should get an error!
+
 Does not implement "Let polymorphism" (yet?)
