@@ -10,7 +10,7 @@ bool(Core) ->
   new_val(Core, vbool).
 
 bool_use(Core) ->
-  new_use(Core, vbool).
+  new_use(Core, ubool).
 
 func(Core, Arg, Ret) ->
   new_val(Core, {vfunc, Arg, Ret}).
