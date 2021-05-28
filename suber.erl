@@ -16,7 +16,8 @@ compile(Core, Bindings, Filename) ->
   Source = unicode:characters_to_list(SourceBinary),
   {ok, Tokens, _} = suber_lexer:string(Source),
   {ok, Ast} = suber_parser:parse(Tokens),
-  suber_typechecker:check_script(Core, Bindings, Ast).
+  suber_typechecker:check_script(Core, Bindings, Ast),
+  io:format("~ts", ["Success!\n"]).
   % generate_erlang_core
   % compile_forms
   % save module
