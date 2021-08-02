@@ -8,3 +8,5 @@ escript -c suber.erl
 ```
 
 Modify the `test_file.suber` to make a typo in a record field name, re-run and you should get an error!
+
+See also the [cubiml branch](https://github.com/michallepicki/suber/tree/cubiml) for a different Algebraic Subtyping algorithm.
