@@ -11,4 +11,8 @@ let should_i_use_it = fun language ->
     false
 
 let program =
-  should_i_use_it {is_cool=true;is_ready=false}
+  should_i_use_it {
+    is_cool=true;
+    is_ready=false;
+    how_cool=100
+  }

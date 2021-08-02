@@ -22,7 +22,7 @@ compile(Typer, Filename, Ctx) ->
   {ok, Tokens, _} = suber_lexer:string(Source),
   {ok, Ast} = suber_parser:parse(Tokens),
   _NewCtx = suber_typer:infer_types(Typer, Ast, Ctx),
-  io:format("~ts", ["Success!\n"]).
+  io:format("~ts", ["no type errors found\n"]).
   % generate_erlang_core
   % compile_forms
   % save module
