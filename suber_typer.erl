@@ -1,5 +1,5 @@
 -module(suber_typer).
--export([infer_types/1]).
+-export([new_ctx/1, infer_types/3]).
 
 instantiate(Typer, Ts, Lvl) ->
   case Ts of
@@ -66,10 +66,7 @@ level(Typer, Ts) ->
     {primitive, _Name} -> 0
   end.
 
-infer_types(Pgrm) ->
-  NextIdRef = counters:new(1, []),
-  TypesTable = ets:new(suber_typer, [set, private]),
-  Typer = {NextIdRef, TypesTable},
+new_ctx(Typer) ->
   Ctx = #{},
   BoolType = {primitive, "bool"},
   IntType = {primitive, "int"},
@@ -80,7 +77,7 @@ infer_types(Pgrm) ->
   Ctx6 = maps:put("add", {function, IntType, {function, IntType, IntType}}, Ctx5),
   V = fresh_var(Typer, 1),
   Ctx7 = maps:put("if", {polymorphic_type, 0, {function, BoolType, {function, V, {function, V, V}}}}, Ctx6),
-  infer_types(Typer, Pgrm, Ctx7).
+  Ctx7.
 
 infer_types(Typer, Pgrm, Ctx) ->
   case Pgrm of
