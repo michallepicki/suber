@@ -1,15 +1,15 @@
-
 -module(suber).
+
 -export([main/1]).
 
 main(_) ->
   leex:file(suber_lexer),
   yecc:file(suber_parser),
-  lists:foreach(fun (Name) ->
-    {ok, _, Binary} = compile:file(Name, [binary]),
-    code:load_binary(Name, [], Binary)
-  end,
-  [suber_lexer, suber_parser, suber_typer]),
+  lists:foreach(fun(Name) ->
+                   {ok, _, Binary} = compile:file(Name, [binary]),
+                   code:load_binary(Name, [], Binary)
+                end,
+                [suber_lexer, suber_parser, suber_typer]),
   NextIdRef = counters:new(1, []),
   TypesTable = ets:new(suber_typer, [set, private]),
   Typer = {NextIdRef, TypesTable},
@@ -22,7 +22,6 @@ compile(Typer, Filename, Ctx) ->
   {ok, Tokens, _} = suber_lexer:string(Source),
   {ok, Ast} = suber_parser:parse(Tokens),
   _NewCtx = suber_typer:infer_types(Typer, Ast, Ctx),
-  io:format("~ts", ["no type errors found\n"]).
-  % generate_erlang_core
-  % compile_forms
-  % save module
+  io:format("~ts", ["no type errors found\n"]).  % generate_erlang_core
+                                                 % compile_forms
+                                                 % save module
