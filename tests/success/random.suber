@@ -13,5 +13,3 @@ let tt3 = (let rec x = (fun y -> {u = (x x); v = y}) in x)
 let tt4 = (let rec x = (fun y -> (let z = (y x) in y)) in x)
 let tt5 = (fun x -> (let y = (x x.v) in 0))
 let tt6 = let rec x = (let y = (x x) in (fun z -> z)) in (x (fun y -> y.u))
-
-bogus
