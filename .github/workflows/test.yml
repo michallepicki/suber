@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install erlang
+        run: |
+          echo "`pwd`/erlang/bin" >> $GITHUB_PATH
+          curl -Lo erlang.tar.gz https://repo.hex.pm/builds/otp/ubuntu-20.04/OTP-24.0.3.tar.gz
+          mkdir erlang
+          tar zxf erlang.tar.gz -C erlang --strip-components=1
+          erlang/Install -minimal  `pwd`/erlang
+          rm erlang.tar.gz
+
+      - name: Run tests
+        run: escript -C run_tests.erl
