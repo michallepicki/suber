@@ -1,11 +1,15 @@
 -module(suber_typer).
 
--export([new/0, new_bindings/1, type_top_level_items/3]).
+-export([new/0, cleanup/1, new_bindings/1, type_top_level_items/3]).
 
 new() ->
   NextIDRef = counters:new(1, []),
   TypesTable = ets:new(suber_types_table, [set, private]),
   {NextIDRef, TypesTable}.
+
+cleanup(TypesState) ->
+  {_, TypesTable} = TypesState,
+  ets:delete(TypesTable).
 
 new_bindings(TypesState) ->
   Bindings = #{},

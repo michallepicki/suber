@@ -1,0 +1,2 @@
+let id = fun x -> x
+let ab = {u = id 0; v = id true}

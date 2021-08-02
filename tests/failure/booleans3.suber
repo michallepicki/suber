@@ -1,0 +1,1 @@
+let t3 = (fun x -> not x.f) { f = 123 }

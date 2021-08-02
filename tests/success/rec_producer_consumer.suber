@@ -1,0 +1,17 @@
+let rec produce = fun arg -> { head = arg; tail = produce (succ arg) }
+let rec consume = fun strm -> add strm.head (consume strm.tail)
+
+let codata = produce 42
+let res = consume codata
+
+let rec codata2 = { head = 0; tail = { head = 1; tail = codata2 } }
+let res = consume codata2
+
+let rec produce3 = fun b -> { head = 123; tail = if b then codata else codata2 }
+let res = fun x -> consume (produce3 x)
+
+let consume2 =
+  let rec go = fun strm -> add strm.head (add strm.tail.head (go strm.tail.tail))
+  in fun strm -> add strm.head (go strm.tail)
+
+let res = consume2 codata2

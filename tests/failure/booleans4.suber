@@ -1,0 +1,1 @@
+let t4 = (fun f -> fun x -> not (f x.u)) false

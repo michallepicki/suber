@@ -1,0 +1,8 @@
+let t1 = fun x -> x.f
+let t2 = {}
+let t3 = { f = 42 }
+let t4 = { f = 42 }.f
+let t5 = (fun x -> x.f) { f = 42 }
+let t6 = fun f -> { x = f 42 }.x
+let t7 = fun f -> { x = f 42; y = 123 }.y
+let t8 = if true then { a = 1; b = true } else { b = false; c = 42 }

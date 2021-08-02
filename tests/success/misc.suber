@@ -1,0 +1,16 @@
+
+let rec r = fun a -> r
+let join = fun a -> fun b -> if true then a else b
+let s = join r r
+
+let rec f = fun x -> fun y -> add (f x.tail y) (f x y)
+let rec f = fun x -> fun y -> add (f x.tail y) (f y x)
+let rec f = fun x -> fun y -> add (f x.tail y) (f x y.tail)
+let rec f = fun x -> fun y -> add (f x.tail y.tail) (f x.tail y.tail)
+let rec f = fun x -> fun y -> add (f x.tail x.tail) (f y.tail y.tail)
+let rec f = fun x -> fun y -> add (f x.tail x) (f y.tail y)
+let rec f = fun x -> fun y -> add (f x.tail y) (f y.tail x)
+
+let f = fun x -> fun y -> if true then { l = x; r = y } else { l = y; r = x }
+
+let rec f = fun x -> fun y -> if true then x else { t = f x.t y.t }

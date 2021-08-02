@@ -1,0 +1,5 @@
+let t1 = let f = fun x -> x in {a = f 0; b = f true}
+let t2 = fun y -> let f = fun x -> x in {a = f y; b = f true}
+let t3 = fun y -> let f = fun x -> y x in {a = f 0; b = f true}
+let t4 = fun y -> let f = fun x -> x y in {a = f (fun z -> z); b = f (fun z -> true)}
+let t5 = fun y -> let f = fun x -> x y in {a = f (fun z -> z); b = f (fun z -> succ z)}

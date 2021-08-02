@@ -1,0 +1,7 @@
+let t1 = 42
+let t2 = fun x -> 42
+let t3 = fun x -> x
+let t4 = fun x -> x 42
+let t5 = (fun x -> x) 42
+let t6 = fun f -> fun x -> f (f x)
+let t7 = let twice = fun f -> fun x -> f (f x) in twice

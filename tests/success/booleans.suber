@@ -1,0 +1,7 @@
+
+let t1 = true
+let t2 = not true
+let t3 = fun x -> not x
+let t4 = (fun x -> not x) true
+let t5 = fun x -> fun y -> fun z -> if x then y else z
+let t6 = fun x -> fun y -> if x then y else x

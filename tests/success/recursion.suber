@@ -1,0 +1,6 @@
+
+let t1 = let rec f = fun x -> f x.u in f
+let t2 = let rec r = fun a -> r in if true then r else r
+let t3 = let rec l = fun a -> l in let rec r = fun a -> fun a -> r in if true then l else r
+let t4 = let rec l = fun a -> fun a -> fun a -> l in let rec r = fun a -> fun a -> r in if true then l else r
+let t5 = let rec recursive_monster = fun x -> { thing = x; self = recursive_monster x } in recursive_monster

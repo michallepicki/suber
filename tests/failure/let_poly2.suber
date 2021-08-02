@@ -1,0 +1,1 @@
+let t2 = (fun k -> let test = k (fun x -> let tmp = add x 1 in x) in test) (fun f -> f true)

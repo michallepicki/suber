@@ -1,0 +1,1 @@
+let t2 = fun x -> { a = x }.b
