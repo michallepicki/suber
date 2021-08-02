@@ -10,18 +10,16 @@ main(_) ->
                    code:load_binary(Name, [], Binary)
                 end,
                 [suber_lexer, suber_parser, suber_typer]),
-  NextIdRef = counters:new(1, []),
-  TypesTable = ets:new(suber_typer, [set, private]),
-  Typer = {NextIdRef, TypesTable},
-  Ctx = suber_typer:new_ctx(Typer),
-  compile(Typer, "test_file.suber", Ctx).
+  TypesState = suber_typer:new(),
+  Bindings = suber_typer:new_bindings(TypesState),
+  compile(TypesState, Bindings, "test_file.suber").
 
-compile(Typer, Filename, Ctx) ->
+compile(TypesState, Bindings, Filename) ->
   {ok, SourceBinary} = file:read_file(Filename),
   Source = unicode:characters_to_list(SourceBinary),
   {ok, Tokens, _} = suber_lexer:string(Source),
   {ok, Ast} = suber_parser:parse(Tokens),
-  _NewCtx = suber_typer:infer_types(Typer, Ast, Ctx),
+  _Module = suber_typer:type_top_level_items(TypesState, Bindings, Ast),
   io:format("~ts", ["no type errors found\n"]).  % generate_erlang_core
                                                  % compile_forms
                                                  % save module

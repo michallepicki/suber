@@ -37,8 +37,8 @@ expr_p -> fun_p : '$1'.
 expr_p -> if_then_else_p : '$1'.
 expr_p -> call_p : '$1'.
 
-top_level_item_p -> 'let' 'rec' 'identifier' '=' expr_p : {'true', extract_value('$3'), '$5'}.
-top_level_item_p -> 'let'       'identifier' '=' expr_p : {'false', extract_value('$2'), '$4'}.
+top_level_item_p -> 'let' 'rec' 'identifier' '=' expr_p : {'top_level_let_expr', 'true', extract_value('$3'), '$5'}.
+top_level_item_p -> 'let'       'identifier' '=' expr_p : {'top_level_let_expr', 'false', extract_value('$2'), '$4'}.
 
 program_p -> top_level_item_p program_p : ['$1' | '$2'].
 program_p -> top_level_item_p : ['$1'].

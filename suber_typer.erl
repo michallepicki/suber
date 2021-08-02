@@ -1,182 +1,203 @@
 -module(suber_typer).
 
--export([new_ctx/1, infer_types/3]).
+-export([new/0, new_bindings/1, type_top_level_items/3]).
 
-new_ctx(Typer) ->
-  Ctx = #{},
+new() ->
+  NextIDRef = counters:new(1, []),
+  TypesTable = ets:new(suber_types_table, [set, private]),
+  {NextIDRef, TypesTable}.
+
+new_bindings(TypesState) ->
+  Bindings = #{},
   BoolType = {primitive, "bool"},
   IntType = {primitive, "int"},
-  Ctx2 = maps:put("true", BoolType, Ctx),
-  Ctx3 = maps:put("false", BoolType, Ctx2),
-  Ctx4 = maps:put("not", {function, BoolType, BoolType}, Ctx3),
-  Ctx5 = maps:put("succ", {function, IntType, IntType}, Ctx4),
-  Ctx6 = maps:put("add", {function, IntType, {function, IntType, IntType}}, Ctx5),
-  V = fresh_var(Typer, 1),
-  Ctx7 =
+  Bindings2 = maps:put("true", BoolType, Bindings),
+  Bindings3 = maps:put("false", BoolType, Bindings2),
+  Bindings4 = maps:put("not", {function, BoolType, BoolType}, Bindings3),
+  Bindings5 = maps:put("succ", {function, IntType, IntType}, Bindings4),
+  Bindings6 = maps:put("add", {function, IntType, {function, IntType, IntType}}, Bindings5),
+  V = new_type_variable(TypesState, 1),
+  Bindings7 =
     maps:put("if",
              {polymorphic_type, 0, {function, BoolType, {function, V, {function, V, V}}}},
-             Ctx6),
-  Ctx7.
+             Bindings6),
+  Bindings7.
 
-infer_types(Typer, Pgrm, Ctx) ->
-  case Pgrm of
+type_top_level_items(TypesState, Bindings, Ast) ->
+  case Ast of
     [] ->
-      Ctx;
-    [{Isrec, Nme, Rhs} | Rest] ->
-      TySch = type_let_rhs(Typer, Isrec, Nme, Rhs, Ctx, 0),
-      Ctx2 = maps:put(Nme, TySch, Ctx),
-      infer_types(Typer, Rest, Ctx2)
+      Bindings;
+    [{top_level_let_expr, IsRec, Name, Expr} | Rest] ->
+      Type = type_let_expr(TypesState, Bindings, IsRec, Name, Expr, 0),
+      Bindings2 = maps:put(Name, Type, Bindings),
+      type_top_level_items(TypesState, Bindings2, Rest)
   end.
 
-type_let_rhs(Typer, Isrec, Nme, Rhs, Ctx, Lvl) ->
-  Res =
-    case Isrec of
+type_let_expr(TypesState, Bindings, IsRec, Name, Expr, Level) ->
+  Type =
+    case IsRec of
       false ->
-        type_expr(Typer, Rhs, Ctx, Lvl + 1);
+        type_expr(TypesState, Bindings, Expr, Level + 1);
       true ->
-        ETy = fresh_var(Typer, Lvl + 1),
-        Ty = type_expr(Typer, Rhs, maps:put(Nme, ETy, Ctx), Lvl + 1),
+        OuterType = new_type_variable(TypesState, Level + 1),
+        InnerType = type_expr(TypesState, maps:put(Name, OuterType, Bindings), Expr, Level + 1),
         Cache = ets:new(suber_cache, [set, private]),
-        constrain(Typer, Ty, ETy, Cache),
+        constrain(TypesState, InnerType, OuterType, Cache),
         ets:delete(Cache),
-        ETy
+        OuterType
     end,
-  {polymorphic_type, Lvl, Res}.
+  {polymorphic_type, Level, Type}.
 
-type_expr(Typer, Expr, Ctx, Lvl) ->
+type_expr(TypesState, Bindings, Expr, Level) ->
   case Expr of
     {variable_expr, Name} ->
-      instantiate(Typer, maps:get(Name, Ctx), Lvl);
+      instantiate(TypesState, maps:get(Name, Bindings), Level);
     {fun_def_expr, Name, Body} ->
-      Param = fresh_var(Typer, Lvl),
-      BodyTy = type_expr(Typer, Body, maps:put(Name, Param, Ctx), Lvl),
-      {function, Param, BodyTy};
-    {call_expr, F, A} ->
-      FTy = type_expr(Typer, F, Ctx, Lvl),
-      ATy = type_expr(Typer, A, Ctx, Lvl),
-      Res = fresh_var(Typer, Lvl),
+      ArgType = new_type_variable(TypesState, Level),
+      BodyType = type_expr(TypesState, maps:put(Name, ArgType, Bindings), Body, Level),
+      {function, ArgType, BodyType};
+    {call_expr, Fun, Arg} ->
+      FunType = type_expr(TypesState, Bindings, Fun, Level),
+      ArgType = type_expr(TypesState, Bindings, Arg, Level),
+      BodyType = new_type_variable(TypesState, Level),
       Cache = ets:new(suber_cache, [set, private]),
-      constrain(Typer, FTy, {function, ATy, Res}, Cache),
+      constrain(TypesState, FunType, {function, ArgType, BodyType}, Cache),
       ets:delete(Cache),
-      Res;
-    {literal_int_expr, _N} ->
+      BodyType;
+    {literal_int_expr, _} ->
       {primitive, "int"};
     {field_access_expr, Obj, Name} ->
-      ObjTy = type_expr(Typer, Obj, Ctx, Lvl),
-      Res = fresh_var(Typer, Lvl),
+      ObjType = type_expr(TypesState, Bindings, Obj, Level),
+      Res = new_type_variable(TypesState, Level),
       Cache = ets:new(suber_cache, [set, private]),
-      constrain(Typer, ObjTy, {record, [{Name, Res}]}, Cache),
+      constrain(TypesState, ObjType, {record, [{Name, Res}]}, Cache),
       ets:delete(Cache),
       Res;
     {record_expr, Fields} ->
-      {record, lists:map(fun({Name, B}) -> {Name, type_expr(Typer, B, Ctx, Lvl)} end, Fields)};
-    {let_expr, Isrec, Nme, Rhs, Bod} ->
-      NTy = type_let_rhs(Typer, Isrec, Nme, Rhs, Ctx, Lvl),
-      type_expr(Typer, Bod, maps:put(Nme, NTy, Ctx), Lvl)
+      {record,
+       lists:map(fun({Name, FieldType}) ->
+                    {Name, type_expr(TypesState, Bindings, FieldType, Level)}
+                 end,
+                 Fields)};
+    {let_expr, IsRec, Name, LetExpr, Body} ->
+      ExprType = type_let_expr(TypesState, Bindings, IsRec, Name, LetExpr, Level),
+      type_expr(TypesState, maps:put(Name, ExprType, Bindings), Body, Level)
   end.
 
-instantiate(Typer, Ts, Lvl) ->
-  case Ts of
+instantiate(TypesState, Type, AtLevel) ->
+  case Type of
     {polymorphic_type, Level, Body} ->
-      Freshened = ets:new(suber_freshened, [set, private]),
-      Ret = freshen_above(Typer, Level, Body, Lvl, Freshened),
-      ets:delete(Freshened),
-      Ret;
+      LevelLimit = Level,
+      freshen_above(TypesState, LevelLimit, Body, AtLevel);
     _ ->
-      Ts
+      Type
   end.
 
-freshen_above(Typer, Limit, Ty, Lvl, Freshened) ->
-  case level(Typer, Ty) =< Limit of
+freshen_above(TypesState, LevelLimit, Type, Level) ->
+  Freshened = ets:new(suber_freshened, [set, private]),
+  Ret = do_freshen_above(TypesState, LevelLimit, Type, Level, Freshened),
+  ets:delete(Freshened),
+  Ret.
+
+do_freshen_above(TypesState, LevelLimit, Type, Level, Freshened) ->
+  case level(TypesState, Type) =< LevelLimit of
     true ->
-      Ty;
+      Type;
     false ->
-      case Ty of
-        {variable, Uid, OldLevel} ->
-          case ets:lookup(Freshened, Uid) of
+      case Type of
+        {variable, ID, _} ->
+          case ets:lookup(Freshened, ID) of
             [{_, FreshenedVariable}] ->
               FreshenedVariable;
             [] ->
-              {variable, V, Lvl} = fresh_var(Typer, Lvl),
-              ets:insert(Freshened, {Uid, {variable, V, Lvl}}),
-              {Uid, OldLevel, LowerBounds, UpperBounds} = get_var(Typer, Uid),
+              {variable, NewID, _} = new_type_variable(TypesState, Level),
+              ets:insert(Freshened, {ID, {variable, NewID, Level}}),
+              {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, ID),
               NewLowerBounds =
                 lists:reverse(
-                  lists:map(fun(T) -> freshen_above(Typer, Limit, T, Lvl, Freshened) end,
+                  lists:map(fun(BoundType) ->
+                               do_freshen_above(TypesState, LevelLimit, BoundType, Level, Freshened)
+                            end,
                             lists:reverse(LowerBounds))),
               NewUpperBounds =
                 lists:reverse(
-                  lists:map(fun(T) -> freshen_above(Typer, Limit, T, Lvl, Freshened) end,
+                  lists:map(fun(BoundType) ->
+                               do_freshen_above(TypesState, LevelLimit, BoundType, Level, Freshened)
+                            end,
                             lists:reverse(UpperBounds))),
-              {_NextIdRef, TypesTable} = Typer,
-              ets:insert(TypesTable, {V, Lvl, NewLowerBounds, NewUpperBounds}),
-              {variable, V, Lvl}
+              put_type_variable(TypesState, NewID, Level, NewLowerBounds, NewUpperBounds)
           end;
-        {function, L, R} ->
+        {function, ArgType, BodyType} ->
           {function,
-           freshen_above(Typer, Limit, L, Lvl, Freshened),
-           freshen_above(Typer, Limit, R, Lvl, Freshened)};
+           do_freshen_above(TypesState, LevelLimit, ArgType, Level, Freshened),
+           do_freshen_above(TypesState, LevelLimit, BodyType, Level, Freshened)};
         {record, Fields} ->
           {record,
            lists:map(fun({Name, FieldType}) ->
-                        {Name, freshen_above(Typer, Limit, FieldType, Lvl, Freshened)}
+                        {Name,
+                         do_freshen_above(TypesState, LevelLimit, FieldType, Level, Freshened)}
                      end,
                      Fields)};
         {primitive, _} ->
-          Ty
+          Type
       end
   end.
 
-fresh_var(Typer, Lvl) ->
-  {NextIdRef, TypesTable} = Typer,
-  Uid = counters:get(NextIdRef, 1),
-  counters:add(NextIdRef, 1, 1),
-  ets:insert(TypesTable, {Uid, Lvl, [], []}),
-  {variable, Uid, Lvl}.
+new_type_variable(TypesState, Level) ->
+  {NextIDRef, _} = TypesState,
+  ID = counters:get(NextIDRef, 1),
+  counters:add(NextIDRef, 1, 1),
+  put_type_variable(TypesState, ID, Level, [], []).
 
-get_var(Typer, Uid) ->
-  {_NextIdRef, TypesTable} = Typer,
-  [Var] = ets:lookup(TypesTable, Uid),
-  Var.
+put_type_variable(TypesState, ID, Level, LowerBounds, UpperBounds) ->
+  {_, TypesTable} = TypesState,
+  ets:insert(TypesTable, {ID, Level, LowerBounds, UpperBounds}),
+  {variable, ID, Level}.
 
-level(Typer, Ts) ->
-  case Ts of
-    {polymorphic_type, Level, _Body} ->
+get_type_variable(TypesState, ID) ->
+  {_, TypesTable} = TypesState,
+  [VarWithBounds] = ets:lookup(TypesTable, ID),
+  VarWithBounds.
+
+level(TypesState, TypeScheme) ->
+  case TypeScheme of
+    {polymorphic_type, Level, _} ->
       Level;
-    {variable, _Uid, Level} ->
+    {variable, _, Level} ->
       Level;
-    {function, Lhs, Rhs} ->
-      max(level(Typer, Lhs), level(Typer, Rhs));
+    {function, ArgType, BodyType} ->
+      max(level(TypesState, ArgType), level(TypesState, BodyType));
     {record, []} ->
       0;
     {record, Fields} ->
       lists:max(
-        lists:map(fun({_Name, FieldType}) -> level(Typer, FieldType) end, Fields));
-    {primitive, _Name} ->
+        lists:map(fun({_, FieldType}) -> level(TypesState, FieldType) end, Fields));
+    {primitive, _} ->
       0
   end.
 
-constrain(Typer, Lhs, Rhs, Cache) ->
-  case Lhs of
-    Rhs ->
+constrain(TypesState, Type0, Type1, Cache) ->
+  case Type0 == Type1 of
+    true ->
       ok;
-    Lhs ->
+    false ->
+      EitherIsVariable =
+        case {Type0, Type1} of
+          {{variable, _, _}, _} ->
+            true;
+          {_, {variable, _, _}} ->
+            true;
+          _ ->
+            false
+        end,
       AlreadyPerformed =
-        case {Lhs, Rhs} of
-          {{variable, _SomeLhsUid, _SomeLhsLevel}, _Rhs} ->
-            case ets:lookup(Cache, {Lhs, Rhs}) of
+        case EitherIsVariable of
+          true ->
+            case ets:lookup(Cache, {Type0, Type1}) of
               [_Found] ->
                 true;
               [] ->
-                ets:insert(Cache, {{Lhs, Rhs}}),
-                false
-            end;
-          {_Lhs, {variable, _SomeRhsUid, _SomeRhsLevel}} ->
-            case ets:lookup(Cache, {Lhs, Rhs}) of
-              [_Found] ->
-                true;
-              [] ->
-                ets:insert(Cache, {{Lhs, Rhs}}),
+                ets:insert(Cache, {{Type0, Type1}}),
                 false
             end;
           _ ->
@@ -186,79 +207,87 @@ constrain(Typer, Lhs, Rhs, Cache) ->
         true ->
           ok;
         false ->
-          case {Lhs, level(Typer, Lhs), Rhs, level(Typer, Rhs)} of
-            {{function, L0, R0}, _LhsLevel, {function, L1, R1}, _RhsLevel} ->
-              constrain(Typer, L1, L0, Cache),
-              constrain(Typer, R0, R1, Cache);
-            {{record, Fs0}, _LhsLevel, {record, Fs1}, _RhsLevel} ->
-              lists:foreach(fun({N1, T1}) ->
-                               case lists:keyfind(N1, 1, Fs0) of
-                                 false -> throw({missing_obj_field, N1, Fs0});
-                                 {_N0, T0} -> constrain(Typer, T0, T1, Cache)
+          case {Type0, level(TypesState, Type0), Type1, level(TypesState, Type1)} of
+            {{function, ArgType0, BodyType0}, _, {function, ArgType1, BodyType1}, _} ->
+              constrain(TypesState, ArgType1, ArgType0, Cache),
+              constrain(TypesState, BodyType0, BodyType1, Cache);
+            {{record, Fields0}, _, {record, Fields1}, _} ->
+              lists:foreach(fun({Name1, FieldType1}) ->
+                               case lists:keyfind(Name1, 1, Fields0) of
+                                 false -> throw({missing_obj_field, Name1, Fields0});
+                                 {_Name0, FieldType0} ->
+                                   constrain(TypesState, FieldType0, FieldType1, Cache)
                                end
                             end,
-                            Fs1);
-            {{variable, LhsUid, LhsLevel}, LhsLevel, Rhs, RhsLevel} when RhsLevel =< LhsLevel ->
-              {LhsUid, LhsLevel, LowerBounds, UpperBounds} = get_var(Typer, LhsUid),
-              NewUpperBounds = [Rhs | UpperBounds],
-              {_NextIdRef, TypesTable} = Typer,
-              ets:insert(TypesTable, {LhsUid, LhsLevel, LowerBounds, NewUpperBounds}),
-              lists:foreach(fun(T) -> constrain(Typer, T, Rhs, Cache) end, LowerBounds);
-            {Lhs, LhsLevel, {variable, RhsUid, RhsLevel}, RhsLevel} when LhsLevel =< RhsLevel ->
-              {RhsUid, RhsLevel, LowerBounds, UpperBounds} = get_var(Typer, RhsUid),
-              NewLowerBounds = [Lhs | LowerBounds],
-              {_NextIdRef, TypesTable} = Typer,
-              ets:insert(TypesTable, {RhsUid, RhsLevel, NewLowerBounds, UpperBounds}),
-              lists:foreach(fun(T) -> constrain(Typer, Lhs, T, Cache) end, UpperBounds);
-            {{variable, _LhsUid, LhsLevel}, LhsLevel, Rhs, _RhsLevel} ->
-              ExtrudeCache = ets:new(suber_extrude_cache, [set, private]),
-              Rhs0 = extrude(Typer, Rhs, LhsLevel, ExtrudeCache),
-              ets:delete(ExtrudeCache),
-              constrain(Typer, Lhs, Rhs0, Cache);
-            {Lhs, _LhsLevel, {variable, _RhsUid, RhsLevel}, RhsLevel} ->
-              ExtrudeCache = ets:new(suber_extrude_cache, [set, private]),
-              Lhs0 = extrude(Typer, Lhs, RhsLevel, ExtrudeCache),
-              ets:delete(ExtrudeCache),
-              constrain(Typer, Lhs0, Rhs, Cache);
+                            Fields1);
+            {{variable, Type0ID, _}, Type0Level, _, Type1Level} when Type1Level =< Type0Level ->
+              {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, Type0ID),
+              NewUpperBounds = [Type1 | UpperBounds],
+              put_type_variable(TypesState, Type0ID, Type0Level, LowerBounds, NewUpperBounds),
+              lists:foreach(fun(BoundType) -> constrain(TypesState, BoundType, Type1, Cache) end,
+                            LowerBounds);
+            {_, Type0Level, {variable, Type1ID, _}, Type1Level} when Type0Level =< Type1Level ->
+              {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, Type1ID),
+              NewLowerBounds = [Type0 | LowerBounds],
+              put_type_variable(TypesState, Type1ID, Type1Level, NewLowerBounds, UpperBounds),
+              lists:foreach(fun(BoundType) -> constrain(TypesState, Type0, BoundType, Cache) end,
+                            UpperBounds);
+            {{variable, _, _}, Type0Level, _, _} ->
+              NewType1 = extrude(TypesState, Type1, Type0Level),
+              constrain(TypesState, Type0, NewType1, Cache);
+            {_, _, {variable, _, _}, Type1Level} ->
+              NewType0 = extrude(TypesState, Type0, Type1Level),
+              constrain(TypesState, NewType0, Type1, Cache);
             _ ->
-              throw({cannot_constrain, Lhs, Rhs})
+              throw({cannot_constrain, Type0, Type1})
           end
       end
   end.
 
-extrude(Typer, Ty, Lvl, ExtrudeCache) ->
-  case level(Typer, Ty) =< Lvl of
+extrude(TypesState, Type, Level) ->
+  ExtrudeCache = ets:new(suber_extrude_cache, [set, private]),
+  Ret = do_extrude(TypesState, Type, Level, ExtrudeCache),
+  ets:delete(ExtrudeCache),
+  Ret.
+
+do_extrude(TypesState, Type, Level, ExtrudeCache) ->
+  case level(TypesState, Type) =< Level of
     true ->
-      Ty;
+      Type;
     false ->
-      case Ty of
-        {function, L, R} ->
-          {function, extrude(Typer, L, Lvl, ExtrudeCache), extrude(Typer, R, Lvl, ExtrudeCache)};
-        {record, Fs} ->
+      case Type of
+        {function, ArgType, BodyType} ->
+          {function,
+           do_extrude(TypesState, ArgType, Level, ExtrudeCache),
+           do_extrude(TypesState, BodyType, Level, ExtrudeCache)};
+        {record, Fields} ->
           {record,
-           lists:map(fun({Name, FTy}) -> {Name, extrude(Typer, FTy, Lvl, ExtrudeCache)} end, Fs)};
-        {primitive, _N} ->
-          Ty;
-        {variable, Uid, OldLevel} ->
-          case ets:lookup(ExtrudeCache, Uid) of
-            [{Uid, Extruded}] ->
+           lists:map(fun({Name, FieldType}) ->
+                        {Name, do_extrude(TypesState, FieldType, Level, ExtrudeCache)}
+                     end,
+                     Fields)};
+        {primitive, _} ->
+          Type;
+        {variable, ID, OldLevel} ->
+          case ets:lookup(ExtrudeCache, ID) of
+            [{_, Extruded}] ->
               Extruded;
             [] ->
-              {variable, Nvs, Lvl} = fresh_var(Typer, Lvl),
-              ets:insert(ExtrudeCache, {Uid, {variable, Nvs, Lvl}}),
-              {Uid, OldLevel, LowerBounds, UpperBounds} = get_var(Typer, Uid),
+              {variable, NewID, _} = new_type_variable(TypesState, Level),
+              ets:insert(ExtrudeCache, {ID, {variable, NewID, Level}}),
+              {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, ID),
               NewLowerBounds =
-                lists:map(fun(T) -> extrude(Typer, T, Lvl, ExtrudeCache) end, LowerBounds),
+                lists:map(fun(BoundType) -> do_extrude(TypesState, BoundType, Level, ExtrudeCache)
+                          end,
+                          LowerBounds),
               NewUpperBounds =
-                lists:map(fun(T) -> extrude(Typer, T, Lvl, ExtrudeCache) end, UpperBounds),
-              {_NextIdRef, TypesTable} = Typer,
-              ets:insert(TypesTable, {Nvs, Lvl, NewLowerBounds, NewUpperBounds}),
-              ets:insert(TypesTable,
-                         {Uid,
-                          OldLevel,
-                          NewLowerBounds ++ LowerBounds,
-                          NewUpperBounds ++ UpperBounds}),
-              {variable, Nvs, Lvl}
+                lists:map(fun(BoundType) -> do_extrude(TypesState, BoundType, Level, ExtrudeCache)
+                          end,
+                          UpperBounds),
+              UpdatedLowerBounds = NewLowerBounds ++ LowerBounds,
+              UpdatedUpperBounds = NewUpperBounds ++ UpperBounds,
+              put_type_variable(TypesState, ID, OldLevel, UpdatedLowerBounds, UpdatedUpperBounds),
+              put_type_variable(TypesState, NewID, Level, NewLowerBounds, NewUpperBounds)
           end
       end
   end.
