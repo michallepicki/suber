@@ -1,69 +1,47 @@
-Nonterminals module_def top_level_items top_level_item top_level_let_def top_level_let_rec_def expr match_expr match_arms match_arm call_or_case_or_simple_expr call_expr case_or_simple_expr simple_expr case_expr field_access_expr let_rec let_expr if_expr func_def_expr record_expr key_val_pairs literal_expr bool variable_expr.
-Terminals 'let' 'rec' ident tag '=' 'true' 'false' 'in' 'and' ';' 'if' 'then' 'else' 'fun' '->' '{' '}' '(' ')' '.' 'match' 'with' '|'.
-Rootsymbol module_def.
+Nonterminals program_p top_level_item_p expr_p let_p fun_p if_then_else_p call_p subexpr_p field_access_p parens_p record_p record_fields_p const_p variable_p.
+Terminals 'let' 'rec' 'in' 'fun' 'if' 'then' 'else' 'identifier' 'number' '(' ')' '{' '}' '.' '->' '=' ';'.
+Rootsymbol program_p.
 
-bool -> 'true' : {bool, 'true'}.
-bool -> 'false' : {bool, 'false'}.
+variable_p -> 'identifier' : {'variable_expr', extract_value('$1')}.
 
-literal_expr -> bool : {literal_expr, '$1'}.
+const_p -> 'number' : {'literal_int_expr', extract_value('$1')}.
 
-func_def_expr -> 'fun' ident '->' expr : {func_def_expr, extract_value('$2'), '$4'}.
+record_fields_p -> 'identifier' '=' expr_p ';' record_fields_p : [{extract_value('$1'), '$3'} | '$5'].
+record_fields_p -> 'identifier' '=' expr_p : [{extract_value('$1'), '$3'}].
 
-if_expr -> 'if' expr 'then' expr 'else' expr : {if_expr, '$2', '$4', '$6'}.
+record_p -> '{' record_fields_p '}' : {'record_expr', '$2'}.
+record_p -> '{' '}' : {'record_expr', []}.
 
-let_expr -> 'let' ident '=' expr 'in' expr : {let_expr, {var_definition, extract_value('$2'), '$4'}, '$6'}.
+parens_p -> '(' expr_p ')' : '$2'.
 
-let_rec -> 'let' 'rec' ident '=' expr 'and' let_rec : [{var_definition, extract_value('$3'), '$5'} | '$7'].
-let_rec -> 'let' 'rec' ident '=' expr : [{var_definition, extract_value('$3'), '$5'}].
+field_access_p -> subexpr_p '.' 'identifier' : {'field_access_expr', '$1', extract_value('$3')}.
 
-key_val_pairs -> ident '=' expr ';' key_val_pairs : [{extract_value('$1'), '$3'} | '$5'].
-key_val_pairs -> ident '=' expr : [{extract_value('$1'), '$3'}].
+subexpr_p -> field_access_p : '$1'.
+subexpr_p -> parens_p : '$1'.
+subexpr_p -> record_p : '$1'.
+subexpr_p -> const_p : '$1'.
+subexpr_p -> variable_p : '$1'.
 
-record_expr -> '{' '}' : {record_expr, []}.
-record_expr -> '{' key_val_pairs '}' : {record_expr, '$2'}.
+call_p -> subexpr_p : '$1'.
+call_p -> call_p subexpr_p : {call_expr, '$1', '$2'}.
 
-field_access_expr -> simple_expr '.' ident : {field_access_expr, '$1', extract_value('$3')}.
+if_then_else_p -> 'if' expr_p 'then' expr_p 'else' expr_p : {'call_expr', {'call_expr', {'call_expr', {'variable_expr', "if"}, '$2'}, '$4'}, '$6'}.
 
-variable_expr -> ident : {variable_expr, extract_value('$1')}.
+fun_p -> 'fun' 'identifier' '->' expr_p : {'fun_def_expr', extract_value('$2'), '$4'}.
 
-simple_expr -> field_access_expr : '$1'.
-simple_expr -> record_expr : '$1'.
-simple_expr -> variable_expr : '$1'.
-simple_expr -> literal_expr : '$1'.
-simple_expr -> '(' expr ')' : '$2'.
+let_p -> 'let' 'rec' 'identifier' '=' expr_p 'in' expr_p : {'let_expr', 'true', extract_value('$3'), '$5', '$7'}.
+let_p -> 'let'       'identifier' '=' expr_p 'in' expr_p : {'let_expr', 'false', extract_value('$2'), '$4', '$6'}.
 
-case_expr -> tag expr : {case_expr, extract_value('$1'), '$2'}.
+expr_p -> let_p : '$1'.
+expr_p -> fun_p : '$1'.
+expr_p -> if_then_else_p : '$1'.
+expr_p -> call_p : '$1'.
 
-case_or_simple_expr -> simple_expr : '$1'.
-case_or_simple_expr -> case_expr : '$1'.
+top_level_item_p -> 'let' 'rec' 'identifier' '=' expr_p : {'true', extract_value('$3'), '$5'}.
+top_level_item_p -> 'let'       'identifier' '=' expr_p : {'false', extract_value('$2'), '$4'}.
 
-call_expr -> call_or_case_or_simple_expr case_or_simple_expr : {call_expr, '$1', '$2'}.
-
-call_or_case_or_simple_expr -> case_or_simple_expr : '$1'.
-call_or_case_or_simple_expr -> call_expr : '$1'.
-
-match_arm -> tag ident '->' call_or_case_or_simple_expr : {{extract_value('$1'), extract_value('$2')}, '$4'}.
-match_arms -> '|' match_arm : ['$2'].
-match_arms -> '|' match_arm match_arms : ['$2' | '$3'].
-match_expr -> 'match' expr 'with' match_arms : {match_expr, '$2', '$4'}.
-
-expr -> func_def_expr : '$1'.
-expr -> if_expr : '$1'.
-expr -> let_expr : '$1'.
-expr -> match_expr : '$1'.
-expr -> call_or_case_or_simple_expr : '$1'.
-
-top_level_let_def -> 'let' ident '=' expr : {top_level_let_def, {var_definition, extract_value('$2'), '$4'}}.
-
-top_level_let_rec_def -> let_rec : {top_level_let_rec_def, '$1'}.
-
-top_level_item -> top_level_let_def : '$1'.
-top_level_item -> top_level_let_rec_def : '$1'.
-
-top_level_items -> top_level_item ';' top_level_items : ['$1' | '$3'].
-top_level_items -> top_level_item ';' : ['$1'].
-
-module_def -> top_level_items : '$1'.
+program_p -> top_level_item_p program_p : ['$1' | '$2'].
+program_p -> top_level_item_p : ['$1'].
 
 Erlang code.
 

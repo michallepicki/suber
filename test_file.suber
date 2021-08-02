@@ -1,19 +1,14 @@
 let is_cool_language = fun language ->
-  let l = match language with
-    | `Erlang l -> l
-    | `Mynewlanguage l -> l in
-  l.is_cool;
+  language.is_cool
 
 let is_ready_language = fun language ->
-  match language with
-    | `Erlang l -> true
-    | `Mynewlanguage l -> l.is_ready;
+  language.is_ready
 
 let should_i_use_it = fun language ->
   if is_cool_language language then
     is_ready_language language
   else
-    false;
+    false
 
 let program =
-  should_i_use_it `Mynewlanguage {is_cool=true;is_ready=false};
+  should_i_use_it {is_cool=true;is_ready=false}

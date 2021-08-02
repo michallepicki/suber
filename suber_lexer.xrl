@@ -1,34 +1,28 @@
 Definitions.
 
-IDENT      = [a-z_]+
-TAG        = `[A-Z][a-z_]+
+IDENTIFIER = [a-z_]+[0-9]?
 WHITESPACE = [\s\t\n\r]
+NUMBER     = [0-9]+
 
 Rules.
 
 let           : {'token', {'let', TokenLine}}.
 rec           : {'token', {'rec', TokenLine}}.
-and           : {'token', {'and', TokenLine}}.
+in            : {'token', {'in', TokenLine}}.
 fun           : {'token', {'fun', TokenLine}}.
-->            : {'token', {'->', TokenLine}}.
-=             : {'token', {'=', TokenLine}}.
-true          : {'token', {'true', TokenLine}}.
-false         : {'token', {'false', TokenLine}}.
 if            : {'token', {'if', TokenLine}}.
 then          : {'token', {'then', TokenLine}}.
 else          : {'token', {'else', TokenLine}}.
-match         : {'token', {'match', TokenLine}}.
-with          : {'token', {'with', TokenLine}}.
-in            : {'token', {'in', TokenLine}}.
-\|            : {'token', {'|', TokenLine}}.
-{             : {'token', {'{',  TokenLine}}.
-}             : {'token', {'}',  TokenLine}}.
+{IDENTIFIER}  : {'token', {'identifier', TokenLine, TokenChars}}.
+{NUMBER}      : {'token', {'number', TokenLine, list_to_integer(TokenChars)}}.
 \(            : {'token', {'(',  TokenLine}}.
 \)            : {'token', {')',  TokenLine}}.
-;             : {'token', {';',  TokenLine}}.
+{             : {'token', {'{',  TokenLine}}.
+}             : {'token', {'}',  TokenLine}}.
 \.            : {'token', {'.',  TokenLine}}.
-{IDENT}       : {'token', {'ident', TokenLine, TokenChars}}.
-{TAG}         : {'token', {'tag', TokenLine, TokenChars}}.
+->            : {'token', {'->', TokenLine}}.
+=             : {'token', {'=', TokenLine}}.
+;             : {'token', {';', TokenLine}}.
 {WHITESPACE}+ : 'skip_token'.
 
 Erlang code.
