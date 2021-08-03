@@ -277,19 +277,21 @@ do_extrude(TypesState, Type, Level, ExtrudeCache) ->
             [{_, Extruded}] ->
               Extruded;
             [] ->
-              {variable, NewID, _} = new_type_variable(TypesState, Level),
-              ets:insert(ExtrudeCache, {ID, {variable, NewID, Level}}),
+              {variable, NewID, _} = NewType = new_type_variable(TypesState, Level),
+              ets:insert(ExtrudeCache, {ID, NewType}),
               {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, ID),
               NewLowerBounds =
                 lists:map(fun(BoundType) -> do_extrude(TypesState, BoundType, Level, ExtrudeCache)
                           end,
                           LowerBounds),
+              put_type_variable(TypesState, NewID, Level, NewLowerBounds, []),
               NewUpperBounds =
                 lists:map(fun(BoundType) -> do_extrude(TypesState, BoundType, Level, ExtrudeCache)
                           end,
                           UpperBounds),
-              UpdatedLowerBounds = NewLowerBounds ++ LowerBounds,
-              UpdatedUpperBounds = NewUpperBounds ++ UpperBounds,
+              put_type_variable(TypesState, NewID, Level, NewLowerBounds, NewUpperBounds),
+              UpdatedLowerBounds = [NewType | LowerBounds],
+              UpdatedUpperBounds = [NewType | UpperBounds],
               put_type_variable(TypesState, ID, OldLevel, UpdatedLowerBounds, UpdatedUpperBounds),
               put_type_variable(TypesState, NewID, Level, NewLowerBounds, NewUpperBounds)
           end
