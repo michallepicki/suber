@@ -5,11 +5,13 @@
 new() ->
   NextIDRef = counters:new(1, []),
   TypesTable = ets:new(suber_types_table, [set, private]),
-  {NextIDRef, TypesTable}.
+  ConstrainCache = ets:new(suber_cache, [set, private]),
+  {NextIDRef, TypesTable, ConstrainCache}.
 
 cleanup(TypesState) ->
-  {_, TypesTable} = TypesState,
-  ets:delete(TypesTable).
+  {_, TypesTable, ConstrainCache} = TypesState,
+  ets:delete(TypesTable),
+  ets:delete(ConstrainCache).
 
 new_bindings(TypesState) ->
   Bindings = #{},
@@ -45,9 +47,7 @@ type_let_expr(TypesState, Bindings, IsRec, Name, Expr, Level) ->
       true ->
         OuterType = new_type_variable(TypesState, Level + 1),
         InnerType = type_expr(TypesState, maps:put(Name, OuterType, Bindings), Expr, Level + 1),
-        Cache = ets:new(suber_cache, [set, private]),
-        constrain(TypesState, InnerType, OuterType, Cache),
-        ets:delete(Cache),
+        constrain(TypesState, InnerType, OuterType),
         OuterType
     end,
   {polymorphic_type, Level, Type}.
@@ -64,18 +64,14 @@ type_expr(TypesState, Bindings, Expr, Level) ->
       FunType = type_expr(TypesState, Bindings, Fun, Level),
       ArgType = type_expr(TypesState, Bindings, Arg, Level),
       BodyType = new_type_variable(TypesState, Level),
-      Cache = ets:new(suber_cache, [set, private]),
-      constrain(TypesState, FunType, {function, ArgType, BodyType}, Cache),
-      ets:delete(Cache),
+      constrain(TypesState, FunType, {function, ArgType, BodyType}),
       BodyType;
     {literal_int_expr, _} ->
       {primitive, "int"};
     {field_access_expr, Obj, Name} ->
       ObjType = type_expr(TypesState, Bindings, Obj, Level),
       Res = new_type_variable(TypesState, Level),
-      Cache = ets:new(suber_cache, [set, private]),
-      constrain(TypesState, ObjType, {record, [{Name, Res}]}, Cache),
-      ets:delete(Cache),
+      constrain(TypesState, ObjType, {record, [{Name, Res}]}),
       Res;
     {record_expr, Fields} ->
       {record,
@@ -148,18 +144,18 @@ do_freshen_above(TypesState, LevelLimit, Type, Level, Freshened) ->
   end.
 
 new_type_variable(TypesState, Level) ->
-  {NextIDRef, _} = TypesState,
+  {NextIDRef, _, _} = TypesState,
   ID = counters:get(NextIDRef, 1),
   counters:add(NextIDRef, 1, 1),
   put_type_variable(TypesState, ID, Level, [], []).
 
 put_type_variable(TypesState, ID, Level, LowerBounds, UpperBounds) ->
-  {_, TypesTable} = TypesState,
+  {_, TypesTable, _} = TypesState,
   ets:insert(TypesTable, {ID, Level, LowerBounds, UpperBounds}),
   {variable, ID, Level}.
 
 get_type_variable(TypesState, ID) ->
-  {_, TypesTable} = TypesState,
+  {_, TypesTable, _} = TypesState,
   [VarWithBounds] = ets:lookup(TypesTable, ID),
   VarWithBounds.
 
@@ -180,7 +176,8 @@ level(TypesState, TypeScheme) ->
       0
   end.
 
-constrain(TypesState, Type0, Type1, Cache) ->
+constrain(TypesState, Type0, Type1) ->
+  {_, _, ConstrainCache} = TypesState,
   case Type0 == Type1 of
     true ->
       ok;
@@ -197,11 +194,11 @@ constrain(TypesState, Type0, Type1, Cache) ->
       AlreadyPerformed =
         case EitherIsVariable of
           true ->
-            case ets:lookup(Cache, {Type0, Type1}) of
+            case ets:lookup(ConstrainCache, {Type0, Type1}) of
               [_Found] ->
                 true;
               [] ->
-                ets:insert(Cache, {{Type0, Type1}}),
+                ets:insert(ConstrainCache, {{Type0, Type1}}),
                 false
             end;
           _ ->
@@ -213,14 +210,14 @@ constrain(TypesState, Type0, Type1, Cache) ->
         false ->
           case {Type0, level(TypesState, Type0), Type1, level(TypesState, Type1)} of
             {{function, ArgType0, BodyType0}, _, {function, ArgType1, BodyType1}, _} ->
-              constrain(TypesState, ArgType1, ArgType0, Cache),
-              constrain(TypesState, BodyType0, BodyType1, Cache);
+              constrain(TypesState, ArgType1, ArgType0),
+              constrain(TypesState, BodyType0, BodyType1);
             {{record, Fields0}, _, {record, Fields1}, _} ->
               lists:foreach(fun({Name1, FieldType1}) ->
                                case lists:keyfind(Name1, 1, Fields0) of
                                  false -> throw({missing_obj_field, Name1, Fields0});
                                  {_Name0, FieldType0} ->
-                                   constrain(TypesState, FieldType0, FieldType1, Cache)
+                                   constrain(TypesState, FieldType0, FieldType1)
                                end
                             end,
                             Fields1);
@@ -228,20 +225,20 @@ constrain(TypesState, Type0, Type1, Cache) ->
               {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, Type0ID),
               NewUpperBounds = [Type1 | UpperBounds],
               put_type_variable(TypesState, Type0ID, Type0Level, LowerBounds, NewUpperBounds),
-              lists:foreach(fun(BoundType) -> constrain(TypesState, BoundType, Type1, Cache) end,
+              lists:foreach(fun(BoundType) -> constrain(TypesState, BoundType, Type1) end,
                             LowerBounds);
             {_, Type0Level, {variable, Type1ID, _}, Type1Level} when Type0Level =< Type1Level ->
               {_, _, LowerBounds, UpperBounds} = get_type_variable(TypesState, Type1ID),
               NewLowerBounds = [Type0 | LowerBounds],
               put_type_variable(TypesState, Type1ID, Type1Level, NewLowerBounds, UpperBounds),
-              lists:foreach(fun(BoundType) -> constrain(TypesState, Type0, BoundType, Cache) end,
+              lists:foreach(fun(BoundType) -> constrain(TypesState, Type0, BoundType) end,
                             UpperBounds);
             {{variable, _, _}, Type0Level, _, _} ->
               NewType1 = extrude(TypesState, Type1, Type0Level),
-              constrain(TypesState, Type0, NewType1, Cache);
+              constrain(TypesState, Type0, NewType1);
             {_, _, {variable, _, _}, Type1Level} ->
               NewType0 = extrude(TypesState, Type0, Type1Level),
-              constrain(TypesState, NewType0, Type1, Cache);
+              constrain(TypesState, NewType0, Type1);
             _ ->
               throw({cannot_constrain, Type0, Type1})
           end
